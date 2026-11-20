@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-11-20 — Cycle 3: census-tract food insecurity forecast (rolled up to county)
+
+`scripts/cycle3_tract_model.py` forecasts 2025–2027 food insecurity for FTB's 1,169 census tracts and 10 counties, using only public data (Map the Meal Gap tract data 2020–2024 plus county ALICE; no Moody's).
+
+- **Why tracts first:** the only multi-year MMG history (Snowflake `FTB.SILVER` / `MMG_Consolidated.xlsx`) covers just FTB's 10 counties. A county-only model would have ~60 rows; tracts give ~5,800, and county numbers are population-weighted roll-ups.
+- **Two-part forecast:** rate = service-area level + tract gap from that level. A ridge model predicts the gap from the prior rate, MMG drivers and ALICE. The level is a scenario, not a fit: `flat` (held at 2024's 15.4%) or `recent_trend` (2022–2024 slope, about +0.6 pts/yr). A fitted level just replays the 2021→2022 post-pandemic jump (11.2% → 14.2%).
+- **2024 holdout:** with the true level, the 3-year model beats "keep each tract's gap" (tract MAE 0.024 vs 0.028; county 0.006 vs 0.011). At 1–2 years it ties that baseline. Most forecast error comes from the area-wide level, so an outside outlook (unemployment, SNAP policy) matters more than tract features.
+- **Outputs:** `results/cycle3/`, `forecasts/cycle3/` (tract and county, both scenarios; gitignored, regenerate by running the script), `models/cycle3/` (one JSON per horizon). Inputs go in `data/external/` (not committed).
+
 ## 2026-08-06 — Ceres (Business Central) historical data → ftb.bronze
 
 One-time load of a full database extract from Ceres, the company's former Business Central ERP (now retired/no longer in use), into `ftb.bronze`. 1,404 tables, ~59.6M rows, loaded completely unchanged — raw source table and column names preserved exactly via quoted identifiers, types taken straight from Snowflake's Parquet schema inference. No renaming, cleanup, or type coercion; a separate future script will handle a bronze → silver transform.
