@@ -22,3 +22,6 @@ snowflake-connector-python[pandas]>=4.7.1
 cryptography
 
 # test git sync
+
+# scripts/cycle3_scenarios.py reads config/cycle3_assumptions.yaml
+pyyaml
