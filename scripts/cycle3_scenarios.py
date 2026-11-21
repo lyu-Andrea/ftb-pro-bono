@@ -32,6 +32,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.scenario import inputs as I  # noqa: E402
+from src.scenario import access as A  # noqa: E402
 from src.scenario import layers as L  # noqa: E402
 
 TOP_SHARE = 0.20  # "high-need tract" = top 20% of tracts by FI people within the county
@@ -91,7 +92,8 @@ def main(argv=None):
     seasonal = I.load_seasonal_shares(path(cfg["seasonal_shares"]), cfg["seasonal_scope"])
 
     # Layers
-    county = L.layer1_county_need(cfg, mmg_county, unemp, last_bls, population)
+    cpi = I.load_national_cpi(cfg)
+    county = L.layer1_county_need(cfg, mmg_county, unemp, last_bls, population, cpi)
     dist_year = int(pd.Period(quarters[-1]).year)  # the calendar year the last 4 quarters mostly fall in
     coverage = L.coverage_by_county(cfg, mmg_county, pounds, county, dist_year)
     county = L.layer4_hurricane(L.layer3_convert(county, coverage, cfg["lbs_per_meal"]), cfg["hurricane"])
@@ -102,8 +104,16 @@ def main(argv=None):
     county_q = L.quarterly(county, seasonal, cfg["seasonal_scope"], ids_c)
     tract_q = L.quarterly(tract, seasonal, cfg["seasonal_scope"], ids_t)
 
-    tdist = tract_distribution_vs_need(tract, I.load_tract_distribution(
-        path("data/processed/distribution_tract_quarter.parquet"), quarters, cfg["coverage"]["pounds_column"]), dist_year)
+    tract_dist = I.load_tract_distribution(path("data/processed/distribution_tract_quarter.parquet"), quarters,
+                                           cfg["coverage"]["pounds_column"])
+    tdist = tract_distribution_vs_need(tract, tract_dist, dist_year)
+    # Service-area access (E2SFCA): baseline need in the distribution year vs. pounds from agencies within reach
+    acc_cfg = cfg["access"]
+    access = A.tract_access(tract[(tract["scenario"] == "baseline") & (tract["year"] == dist_year)],
+                            tract_dist.rename(columns={"pounds_last_4q": "pounds"}),
+                            A.load_tract_centroids(path(acc_cfg["centroids"])), radii=tuple(acc_cfg["radii_miles"]),
+                            main_radius=acc_cfg["main_radius_miles"], low_ratio=acc_cfg["low_access_ratio"])
+    tdist = tdist.merge(access.drop(columns=["county_fips", "fi_people", "high_need_tract"]), on="tract_geoid", how="left")
     sens = sensitivity(county, cfg, max(cfg["target_years"]) - 1)
 
     # Outputs
@@ -124,6 +134,7 @@ def main(argv=None):
     sens.round(1).assign(fi_rate_change_pts=sens["fi_rate_change_pts"]).to_csv(out / "scenario_sensitivity.csv", index=False)
 
     derived = {
+        "last_cpi_year": cpi.attrs["last_year"], "last_cpi_year_months": cpi.attrs["last_year_months"],
         "last_bls_year": last_bls, "last_bls_year_is_estimate": bool(unemp.loc[unemp["year"] == last_bls, "is_estimate"].any()),
         "distribution_quarters": quarters,
         "coverage_ftb_wide_current": round(coverage.attrs["ftb_wide_current"], 4),
@@ -153,8 +164,16 @@ def main(argv=None):
     print(show[["scenario", "year", "fi_rate", "fi_people", "ftb_planned_meals", "ftb_planned_lbs_total"]]
           .rename(columns={"fi_rate": "rate_%", "fi_people": "people_K", "ftb_planned_meals": "FTB_meals_M",
                            "ftb_planned_lbs_total": "FTB_lbs_M"}).round(2).to_string(index=False))
-    print(f"\nHigh-need tracts with no agency in the tract: {int(tdist['flag_high_need_no_agency_in_tract'].sum())}"
-          f" of {int(tdist['high_need_tract'].sum())}")
+    r = acc_cfg["main_radius_miles"]
+    print(f"\nService-area access (E2SFCA, {r:g} mi): FTB average {access.attrs['ftb_avg_lbs_per_fi_person']:.0f} lbs per FI person"
+          f" (tract-mapped pounds)")
+    print(f"High-need tracts: {int(tdist['high_need_tract'].sum())} | no agency inside the tract: "
+          f"{int(tdist['flag_high_need_no_agency_in_tract'].sum())} | low access within {r:g} mi (<"
+          f"{acc_cfg['low_access_ratio']:.0%} of average): {int(tdist['flag_high_need_low_access'].sum())}"
+          f" | low at 5, 10 and 15 mi: {int((tdist['flag_low_access_all_radii'] & tdist['high_need_tract']).sum())}")
+    by_c = tdist.assign(low=tdist["flag_low_access"] * tdist["fi_people"]).groupby("county_name")[["low", "fi_people"]].sum()
+    print("Share of FI people in low-access tracts, by county:",
+          (by_c["low"] / by_c["fi_people"]).round(2).sort_values(ascending=False).to_dict())
 
 
 if __name__ == "__main__":

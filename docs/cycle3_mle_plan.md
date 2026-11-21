@@ -143,6 +143,21 @@ so "keep current coverage" reproduces today's pounds and grows only with need.
   next step is a service-area view (tract + neighbors, or ZIP).
 - Corrected MMG 2023 county file still pending.
 
+## Update (2026-11-21): S model and service-area access added
+**S model** (`scripts/cycle3_s_model.py`): explains MMG's national year effect (from CPS survey data, unlike county
+rates; `scripts/cycle3_check_mmg_circularity.py` shows county rates are MMG's own formula, R² = 1.00).
+- dS = **0.299 × % change in relative food-at-home price** − 2.27 × change in pandemic aid (R² 0.62 on 15 changes).
+- 2022 jump: +0.9 food prices + 2.3 aid ending = +3.2 of +3.9.
+- As a forecaster it barely beats "S unchanged" (as-of MAE 0.83 vs 0.86), so it **calibrates** the scenarios:
+  S = food-price part (data: observed CPI, −0.4 pts by 2026 because food got relatively cheaper) + policy part (assumption).
+- Effect: baseline 2026 drops from 16.3% to **15.8%**. The historical swing is now a "2022 replay" (+3% food, +2.3 policy).
+
+**Service-area access** (E2SFCA, `src/scenario/access.py`): pounds per food-insecure person reachable within
+5 / 10 / 15 miles, instead of only counting agencies inside the tract.
+- High-need tracts with no agency inside: 156 of 234. With low access within 10 mi: **34** (28 low at every radius).
+- FI people in low-access tracts: Sumter 76% (also with hubs counted), Citrus 94% → 58% if hubs are counted
+  (the hub decision matters), Hernando ~40%, Polk ~35%, Hardee 33%; Pinellas / Hillsborough / Pasco under 10%.
+
 ## Steps
 
 ### 1–2. Data extraction and cleaning

@@ -19,7 +19,9 @@ Rates are decimals (0.163 = 16.3%); `*_pts` columns are percentage points.
 | base_fi_rate | MMG food insecurity rate in the base year (the anchor) |
 | unemployment_change_pts | Change vs. the base year: BLS observed (latest year estimated from year-to-date), plus the scenario extra |
 | contrib_unemployment_pts / contrib_poverty_pts | coefficient × change, in rate points |
-| common_shift_pts | S, the area-wide policy/price shift assumed |
+| s_food_price_pts | Food-price part of S: 0.299 × % change in the relative price of food at home vs. the base year (observed CPI, then the scenario assumption) |
+| s_policy_pts | Policy part of S (scenario assumption, e.g. SNAP changes) |
+| common_shift_pts | S = s_food_price_pts + s_policy_pts |
 | fi_rate | base_fi_rate + (contributions + S) / 100 |
 | population | UF BEBR population (April 1), scenario's series |
 | fi_people | fi_rate × population |
@@ -52,6 +54,15 @@ separate quarterly forecast.**
 | high_need_tract | In the top 20% of tracts in its county by FI people |
 | flag_high_need_no_agency_in_tract | High-need tract with no agency located in it (its residents may still be served nearby) |
 | shareable_outside_team | False when 1–2 agencies make up the tract's pounds (would reveal an agency) |
+| access_lbs_per_fi_person_{5,10,15}mi | **Service-area access (E2SFCA):** pounds per food-insecure person per year reachable from the tract, counting agencies within 5 / 10 / 15 miles (closer agencies weigh more) and sharing each agency's pounds among everyone within its reach |
+| access_ratio_{5,10,15}mi | Access ÷ FTB-wide average (1.0 = average) |
+| flag_low_access | Access within 10 miles below 50% of the average |
+| flag_high_need_low_access | High-need tract **and** low access: the main "look here" list |
+| flag_low_access_all_radii | Low access at 5, 10 and 15 miles (robust to the radius choice) |
+| missing_centroid | Tract not found in the Census Gazetteer (access = 0) |
+
+Access limits: agencies sit at their tract's centroid; county-only pounds and agencies outside FTB's 10 counties
+aren't counted, so border tracts (e.g. Sumter, next to non-FTB counties) can look worse than they are.
 
 ## scenario_summary_county.csv, scenario_sensitivity.csv
 County + "FTB total" rows of the main measures per scenario/year, and the effect of +1 pt unemployment / poverty / S

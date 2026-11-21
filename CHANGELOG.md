@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-11-21 — S model, service-area access (E2SFCA), MMG circularity check
+
+- `scripts/cycle3_s_model.py`: S = food-price part (0.299 pts per +1% relative food-at-home price, from national CPI) + policy part (assumption). Fitted on MMG's year effects 2009–2024; used as calibration, not a forecaster.
+- Scenarios now take `food_price_change_pct_per_year` and `policy_shift` instead of one `common_shift`. Baseline 2026: 15.8%.
+- `src/scenario/access.py`: E2SFCA service-area access per tract (5/10/15 mi). It's added to `tract_distribution_vs_need.csv`, and 34 high-need low-access tracts are flagged.
+- `scripts/cycle3_check_mmg_circularity.py`: MMG county rates are reproduced by MMG's own coefficients (R² = 1.00), so we don't fit our own FI regression on them.
+- New public inputs in the data repo: national BLS CPI/unemployment; Census tract centroids (via `get_public_data.sh`).
+
 ## 2026-11-21 — Cycle 3 scenario model (Layers 0–4) + backtests
 
 - `config/cycle3_assumptions.yaml`: every forward-looking number (base year 2024; MMG 2026 brief coefficients 0.471 / 0.289; BLS-observed unemployment; BEBR population; coverage; 3 scenarios; hurricane overlay off).

@@ -37,29 +37,43 @@ coverage:                       # share of the meal gap FTB supplies
 seasonal_shares: data/processed/seasonal_quarter_shares.parquet
 seasonal_scope: FTB             # FTB | county
 
+# S (the area-wide shift) = food-price part + policy part.
+#   food-price part [data]: b_food x % change in the relative price of food at home (CPI food at home / all items)
+#     vs. the base year. Observed national CPI up to the latest month; after that the scenario's assumption.
+#   policy part [team]: benefit / policy changes outside the price history (e.g. 2025-26 SNAP work requirements).
+s_model:
+  food_price_coef: 0.299        # [data] pts of S per +1% relative food price; refit with scripts/cycle3_s_model.py
+  aid_effect_reference: 2.27    # [data] pts: size of the 2020-21 pandemic-aid effect (start / end), for scale
+  cpi_files: [data/external/bls/national_2008_2017.json, data/external/bls/national_2018_2026.json]
+
 # Scenarios. Each one is applied to every target year, relative to the base year.
 #   unemployment_extra: pts ADDED on top of the observed BLS path (applies from the first year after BLS data)
 #   poverty_change:     pts vs. base year (no newer poverty data exists than the base year's ACS)
-#   common_shift:       S, pts vs. base year: national policy / prices / benefits (SNAP), the part local data can't predict
+#   food_price_change_pct_per_year: relative food price change per year AFTER the latest CPI year (%)
+#   policy_shift:       pts of S from policy/benefits (the part history can't price)
 #   population_series:  BEBR low | medium | high
 scenarios:
   baseline:
-    description: "Unemployment as observed by BLS through 2026, then flat; SNAP cuts add a modest shift"
+    description: "Unemployment and food prices as observed through 2026, then flat; SNAP cuts add a modest shift"
     unemployment_extra: 0.0     # [team]
     poverty_change: 0.0         # [team]
-    common_shift: 0.5           # [team] 2025-26 SNAP work-requirement changes (FL caseload -489K, Jan 2025 -> Feb 2026)
+    food_price_change_pct_per_year: 0.0   # [team]
+    policy_shift: 0.5           # [team] 2025-26 SNAP work-requirement changes (FL caseload -489K, Jan 2025 -> Feb 2026);
+                                #        about 1/5 of the pandemic-aid effect (aid_effect_reference)
     population_series: medium   # [published]
   economic_stress:
-    description: "Recession on top of the observed path: +1.5 pts unemployment, +1 pt poverty, larger shift"
+    description: "Recession on top of the observed path: +1.5 pts unemployment, +1 pt poverty, food inflation, larger SNAP effect"
     unemployment_extra: 1.5     # [team]
     poverty_change: 1.0         # [team]
-    common_shift: 1.0           # [team]
+    food_price_change_pct_per_year: 2.0   # [team]
+    policy_shift: 1.0           # [team]
     population_series: medium
   historical_swing:
-    description: "A 2022-sized national shock (end of pandemic aid + food inflation), labeled from history"
+    description: "2022 replay: a benefit withdrawal the size of the end of pandemic aid, plus 2022-style food inflation"
     unemployment_extra: 0.0
     poverty_change: 0.0
-    common_shift: 2.5           # [data] FTB-area county rate rose ~2.5 pts 2021->2022 (national year effect +3.9)
+    food_price_change_pct_per_year: 3.0   # [data] relative food price rose ~3% in 2022
+    policy_shift: 2.3           # [data] = aid_effect_reference (S model); 2022 total: +0.9 food + 2.3 aid = +3.2 of +3.9
     population_series: medium
 
 # Reference for choosing S: MMG year fixed effects (national level shift vs. 2009, pts), Appendix Table 1.
@@ -79,6 +93,13 @@ common_shift_history:           # [published]
   2022: -1.1
   2023: -0.1
   2024: -0.3
+
+# Service-area access (E2SFCA): pounds per food-insecure person reachable from each tract.
+access:
+  centroids: data/external/census/2020_gaz_tracts_12.txt   # [data] Census 2020 Gazetteer, Florida tracts (get_public_data.sh)
+  radii_miles: [5, 10, 15]      # [team] sensitivity radii
+  main_radius_miles: 10         # [team] catchment used for flags
+  low_access_ratio: 0.5         # [team] "low access" = below 50% of the FTB-wide average
 
 # Layer 4: hurricane overlay (off by default). extra = planned lbs x footprint share x (uplift - 1) x weeks / 52
 hurricane:

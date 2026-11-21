@@ -14,26 +14,40 @@ def unemployment_change(unemp: pd.DataFrame, last_bls_year: int, base_year: int,
     return observed + (extra_pts if year > last_bls_year else 0.0)
 
 
+def food_price_shift(cfg: dict, cpi: pd.DataFrame, year: int, extra_pct_per_year: float) -> float:
+    """Food-price part of S (pts) vs. the base year: b_food x % change in the relative food-at-home price.
+    Observed CPI up to the last CPI year; after that the scenario's assumed relative change per year."""
+    import numpy as np
+    base, last = cfg["base_year"], cpi.attrs["last_year"]
+    rel = cpi["food_rel"]
+    rel_y = rel[min(year, last)] * (1 + extra_pct_per_year / 100) ** max(0, year - last)
+    return cfg["s_model"]["food_price_coef"] * 100 * float(np.log(rel_y / rel[base]))
+
+
 def layer1_county_need(cfg: dict, mmg_county: pd.DataFrame, unemp: pd.DataFrame, last_bls_year: int,
-                       population: pd.DataFrame) -> pd.DataFrame:
-    """rate[c,T] = MMG rate[c,base] + b_unemp * d_unemp + b_pov * d_pov + S ; people = rate x population."""
+                       population: pd.DataFrame, cpi: pd.DataFrame) -> pd.DataFrame:
+    """rate[c,T] = MMG rate[c,base] + b_unemp * d_unemp + b_pov * d_pov + S ; people = rate x population.
+    S = food-price part (from CPI, S model) + policy part (scenario assumption)."""
     base_year, coef = cfg["base_year"], cfg["coefficients"]
     base = mmg_county[mmg_county["year"] == base_year].set_index("county_fips")
     rows = []
     for name, sc in cfg["scenarios"].items():
         for year in cfg["target_years"]:
+            s_food = food_price_shift(cfg, cpi, year, sc["food_price_change_pct_per_year"])
+            s_total = s_food + sc["policy_shift"]
             d_un = unemployment_change(unemp, last_bls_year, base_year, year, sc["unemployment_extra"])
             pop = population[(population["series"] == sc["population_series"]) & (population["year"] == year)]
             pop = pop.set_index("county_fips")["population"]
             for fips, b in base.iterrows():
                 contrib_un = coef["unemployment"] * d_un[fips]
                 contrib_pov = coef["poverty"] * sc["poverty_change"]
-                rate = b["fi_rate"] + (contrib_un + contrib_pov + sc["common_shift"]) / PTS
+                rate = b["fi_rate"] + (contrib_un + contrib_pov + s_total) / PTS
                 rows.append({
                     "scenario": name, "year": year, "county_fips": fips, "county_name": b["county_name"],
                     "base_fi_rate": b["fi_rate"], "unemployment_change_pts": d_un[fips],
                     "contrib_unemployment_pts": contrib_un, "contrib_poverty_pts": contrib_pov,
-                    "common_shift_pts": sc["common_shift"], "fi_rate": rate,
+                    "s_food_price_pts": s_food, "s_policy_pts": sc["policy_shift"], "common_shift_pts": s_total,
+                    "fi_rate": rate,
                     "population": pop[fips], "fi_people": rate * pop[fips],
                 })
     return pd.DataFrame(rows)

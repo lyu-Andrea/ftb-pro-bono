@@ -113,6 +113,32 @@ def load_bls_unemployment(path: Path) -> tuple[pd.DataFrame, int]:
     return annual.sort_values(["county_fips", "year"]).reset_index(drop=True), last_year
 
 
+CPI_SERIES = {"CUUR0000SAF11": "food_at_home", "CUUR0000SA0": "all_items"}
+
+
+def load_national_cpi(cfg: dict) -> pd.DataFrame:
+    """National CPI (not seasonally adjusted), annual averages by year: food at home, all items, and their ratio.
+    The latest year is a year-to-date average (a ratio of two indexes, so the months don't need to be complete)."""
+    rows = []
+    for rel in cfg["s_model"]["cpi_files"]:
+        with open(cfg["_root"] / rel) as f:
+            for s in json.load(f)["Results"]["series"]:
+                if s["seriesID"] not in CPI_SERIES:
+                    continue
+                for d in s["data"]:
+                    if d["period"].startswith("M") and d["period"] != "M13":
+                        try:
+                            rows.append((CPI_SERIES[s["seriesID"]], int(d["year"]), int(d["period"][1:]), float(d["value"])))
+                        except ValueError:
+                            continue
+    m = pd.DataFrame(rows, columns=["series", "year", "month", "value"]).drop_duplicates(["series", "year", "month"])
+    a = m.groupby(["year", "series"])["value"].mean().unstack()
+    a["food_rel"] = a["food_at_home"] / a["all_items"]
+    a.attrs["last_year"] = int(m["year"].max())
+    a.attrs["last_year_months"] = int(m.loc[m["year"] == m["year"].max(), "month"].max())
+    return a
+
+
 def _county_code(name: str):
     name = str(name).strip().lower().replace(" county", "")
     for fips, n in FTB_COUNTIES.items():

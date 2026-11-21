@@ -30,7 +30,8 @@ the decisions made so far, and the open items.
 ## Code
 - Scenario model: `config/cycle3_assumptions.yaml` (Layer 0) → `src/scenario/` → `scripts/cycle3_scenarios.py`
   (outputs to gitignored `forecasts/cycle3/scenario/`, documented in `docs/cycle3_output_dictionary.md`);
-  backtests in `scripts/cycle3_backtest_scenario.py`.
+  backtests in `scripts/cycle3_backtest_scenario.py`. S = food-price part (`scripts/cycle3_s_model.py`) + policy assumption.
+  Service-area access (E2SFCA): `src/scenario/access.py`. Why no own FI regression: `scripts/cycle3_check_mmg_circularity.py`.
 - `scripts/cycle3_tract_model.py`: ridge tract model (the **challenger** to Layer 2 shares) and the as-of backtest.
   It reuses `src/models/train_model.py` (`fit_weighted_ridge`, `weighted_metrics`) and `src/features/build_features.clip_rate`.
 - Earlier cycles (ZIP level): notebooks 1.2–1.6, `scripts/retrain_lag3_model.py`, `scripts/score_new_year.py`.
