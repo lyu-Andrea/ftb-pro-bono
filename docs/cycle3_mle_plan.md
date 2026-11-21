@@ -1,195 +1,189 @@
-# Cycle 3 plan: food insecurity forecast → tract food need → handoff to FTB
+# Cycle 3 plan: scenario model for food need → tract allocation → handoff to FTB
 
 Status as of 2026-11-21. Branch: `cycle3-county-tract-model` on `lyu-Andrea/ftb-pro-bono`.
+Design basis: the team's *Cycle 3 Forecasting Architecture Review* (Oct 30, 2026), updated with what we've
+verified since (see "What changed since the October review").
 
 ## Goal and scope
 
-FTB will use the model mainly for **annual planning**, and possibly for **quarterly or half-yearly** estimates as well (monthly is too fine for data that is published this late).
+FTB uses this for **annual planning**, and possibly **quarterly or half-yearly** checks.
 
-1. **Forecast food insecurity (FI)** for FTB's 1,169 census tracts, rolled up to its 10 counties.
-2. **Turn it into food need in pounds per tract**, using a stated pounds-per-person assumption.
-   NetSuite distribution, **totalled per tract** (not split by agency), is used to set that assumption and to
-   compare current distribution with need, tract by tract.
-3. **Split annual need into quarters (or halves)**, using the seasonal pattern of distribution.
-4. **Hand over the model, not a dashboard.** The handoff is how to recalibrate the model each year, how to
-   monitor it during the year, and a fixed output format. Connecting the outputs to the dashboard is a
-   teammate's job, and our scope ends at the model outputs.
+1. **Scenario model of county food need.** Start from the latest official MMG level and apply published
+   sensitivities and explicit, editable assumptions (unemployment, poverty, a policy/price shift, population).
+2. **Allocate to census tracts** using each tract's stable share of its county's need.
+3. **Convert to meals and pounds**, using FTB-owned parameters. NetSuite distribution is used **totalled per tract**
+   (never per agency) to set and check coverage.
+4. **Hand over the model**: a yearly recalibration runbook, monitoring during the year, and a fixed output
+   format. The dashboard is a teammate's job, so our scope ends at the model outputs.
 
-Constraints: public or FTB-owned data only (no Moody's), and keep the effort proportionate.
+Constraints: public or FTB-owned data only (**no Moody's**), and keep the effort proportionate.
+
+## Why scenarios rather than a fitted forecast (verified)
+- **82% of year-to-year county change is one area-wide shift** (pandemic aid, its end, prices, SNAP), not local drivers.
+  Our as-of tract backtest agrees: every method missed 2021→2022 by about 3 pts, and when the level is known,
+  error drops to 0.3–0.8 pts at county level.
+- **Too little comparable history to learn that level.** MMG data before the 2020 release isn't comparable
+  (Feeding America says so), which leaves 6 county years (2019–2024) and 5 tract years (2020–2024).
+- In that window food insecurity fell when unemployment spiked (2020) and jumped when unemployment was at a record low (2022).
+  A local regression would get the sign of unemployment wrong.
+- So the level is an **explicit assumption**, and the geography comes from **stable shares**.
 
 ## Caveat to put in every FTB deliverable
+> **Food distributed is an estimate of food needed, not a measure of it.** It's limited by supply, agency
+> capacity and ordering, and is counted where the agency is, not where its clients live. Comparisons of
+> distribution vs. need show where to look, not proof. **FTB should set up a way to check them, i.e.
+> agency feedback** (see 6e).
 
-> **Food distributed is an estimate of food needed, not a measure of it.** What reaches a tract depends
-> on supply, agency capacity and ordering, and can be well above or below the real need there. Tract
-> comparisons of distribution vs. need show where to look, not proof of over- or under-supply. **FTB
-> should set up a way to check them, i.e. agency feedback** (see step 6).
+## Architecture
+
+```
+Layer 0 ASSUMPTIONS (one editable file, per scenario)
+   base MMG year · MMG coefficients (from that year's brief) · Δunemployment · Δpoverty
+   · common shift S · population path · meals short per person · coverage · lbs/meal · overlay settings
+        │
+Layer 1 COUNTY NEED ("how much")
+   rate[c,T]   = MMG_rate[c,base] + β_unemp·Δunemp[c] + β_pov·Δpov[c] + S_T
+   people[c,T] = rate[c,T] × population[c,T]          (population from BEBR projections)
+        │
+Layer 2 WHERE: TRACT ALLOCATION
+   share[t]     = MMG FI persons[t] / Σ tracts in county   (latest year, or 2-year average; summed to county)
+   people[t,T]  = people[c,T] × share[t]
+   Challenger: our ridge tract model (scripts/cycle3_tract_model.py); used only if it beats shares in backtest
+        │
+Layer 3 CONVERT TO A PLAN
+   meals_needed = people × meals short per person (MMG meal gap ÷ FI persons ≈ 190)
+   FTB_meals    = meals_needed × coverage      (current coverage from NetSuite, per tract/county)
+   FTB_lbs      = FTB_meals × 1.2
+   quarterly    = annual × seasonal quarter share (from distribution history)
+        │
+Layer 4 OVERLAYS (optional)
+   hurricane: baseline × in-footprint × (uplift − 1) × weeks/52 · later: in-year signals (211, SNAP caseload)
+        │
+OUTPUT: one table per scenario: people · meals needed · FTB meals · FTB lbs, by county and tract (annual + quarterly)
+```
+
+Every step is a multiplication a program manager can check in a spreadsheet. **New scenarios never need code changes.**
+
+### Scenarios: fixed scenarios, not probability ranges
+- **Baseline**, **economic stress**, plus a **labeled historical swing** (e.g. "a 2022-sized shift, S = +2.5 pts").
+- **No P10/P50/P90.** There are only about 3–5 independent backtest errors, so a "90% interval" can't be checked.
+- Menu for S, from history: 0 / +0.5 / +1.0 / +2.5 pts. FTB leadership chooses; the team advises.
+
+### Population (Layer 0 → 1)
+- County population paths from **UF BEBR** Florida county projections (public): low / medium / high series.
+  Fast-growing counties (Pasco, Polk, Sumter) can move need as much as the rate does over 2–3 years.
+- Tracts inherit county growth (tract-level projections are out of scope).
+
+## What changed since the October review
+| October document said | Now |
+|---|---|
+| Use Moody's for the unemployment path | **No Moody's** (project constraint). Use BLS LAUS history, FTB's own assumption, or public outlooks; BEBR for population |
+| Coefficients 0.471 / 0.289 (2026 brief) | Read them **from the brief matching the base year**, recorded in Layer 0. The 2025 brief says 0.46 / 0.332, so they change between releases |
+| 2024 tract tab not extracted | **Done**: 1,169 FTB tracts for 2024, matched to the 2023 IDs |
+| No persistence baseline anywhere | **Done**: as-of backtest vs. persistence and persistence + area shift (`results/cycle3/tract_backtest_as_of.csv`) |
+| 2023 county data has the BLS-unemployment error | **Confirmed** in our file (2023 = 2022 in all 10 counties). **Re-download the corrected file** before using 2023 |
+| Two tract source files disagree | We use `MMG_Consolidated.xlsx` (same rows as `FTB.SILVER.CENSUS_TRACT`). Record it as the single source |
+| (our earlier plan) Request MMG history back to 2009 for long backtests | **Withdrawn**: pre-2020 releases aren't comparable |
+| (our earlier plan) Uncertainty bands | **Replaced** by fixed scenarios + a labeled historical swing |
 
 ## Data plan: extract small aggregates to local files, then process in Python
-
 Raw files go in `data/raw/` and `data/external/`, which git ignores. The SQL extract queries are committed.
 
-| # | Data | Source | Grain | Size | Status |
-|---|---|---|---|---|---|
-| D1 | MMG census tract 2020–2023 | `MMG_Consolidated.xlsx`, same as `FTB.SILVER.CENSUS_TRACT` | tract × year | 4.7K rows | have |
-| D2 | MMG 2024 (national; filtered to FTB) | `MMG_2026_2024-data.xlsx` | tract, county | 85K rows | have |
-| D3 | MMG county 2019–2024 (meal gap, cost per meal) | D1 + D2 County sheets | county × year | 60 rows | have |
-| D4 | ALICE county 2010–2023 | `2025_ALICE_Florida_Data_Sheet.xlsx` (better than `GOLD.ALICE_REPORT`, which has one year) | county × year | 600 rows | have |
-| D5 | Pounds distributed per agency per month, Apr 2025 → latest | `STITCH.SNOWFLAKE_NS_INT` (`CUSTOMRECORD_FOOD_DISTRIBUTION_SUMMARY`, or `ITEMFULFILLMENT` / `SALESORDERITEM` + `ITEM`) | agency × month | ~10K rows | **need export** |
-| D6 | Agency → tract (used only to total D5 per tract) | `FTB.GOLD.AGENCIES.GEOID_AGENCES`; NetSuite `CUSTOMER` address/ZIP for agencies missing there | agency | ~2K rows | **need export** |
-| D7 | *(optional)* Pre-NetSuite distribution history, incl. July 2025 | `FTB.BRONZE` Ceres, aggregated per agency per quarter | agency × quarter | small | optional; more years give a steadier seasonal pattern |
-| D11 | **Older MMG releases: national county, ~2009–2023** | Feeding America (free; request on their MMG site) | county × year | ~45K rows | **request**: needed for long-horizon backtests (step 5a) |
-| D8 | *(optional)* Ordered vs. shipped quantity per month | NetSuite `SALESORDERITEM` vs `ITEMFULFILLMENT`, totalled per tract | tract × month | small | optional; a sign of supply shortfall |
-| D9 | Monitoring indicators: county unemployment (BLS LAUS, monthly), SNAP caseload (FL DCF, monthly) | public | county × month | tiny | we download |
-| D10 | Census tract centroids (for agencies without a tract) | Census Gazetteer / geocoder (public) | tract | tiny | we download |
+| # | Data | Source | Grain | Status |
+|---|---|---|---|---|
+| D1 | MMG census tract 2020–2023 | `MMG_Consolidated.xlsx` | tract × year | have |
+| D2 | MMG 2024, tract + county | `MMG_2026_2024-data.xlsx` | tract, county | have |
+| D3 | **Corrected MMG 2023 county estimates** | Feeding America (re-download) | county | **need** |
+| D4 | MMG technical brief matching the base year (coefficients) | Feeding America | — | have 2025 brief; **get the 2026 one** |
+| D5 | Pounds per agency per month, Apr 2025 → latest, totalled per tract | NetSuite (`STITCH.SNOWFLAKE_NS_INT`) | agency × month → tract × quarter | **need export** |
+| D6 | Agency → tract | `FTB.GOLD.AGENCIES.GEOID_AGENCES`; NetSuite `CUSTOMER` ZIP for agencies missing there | agency | **need export** |
+| D7 | Exclusions: disaster (`DISA-*`), transfers to other food banks (`FBFL-*`, `FBKY-*`), hub agencies | NetSuite | agency | flag in D5 |
+| D8 | County population projections | UF BEBR (public) | county × year | we download |
+| D9 | County unemployment, monthly | BLS LAUS (public) | county × month | we download |
+| D10 | *(optional)* Ceres distribution history: seasonality, hurricane uplift (Ian 2022, Helene/Milton 2024) | `FTB.BRONZE` | agency × month | optional (Layer 4) |
+| D11 | *(optional)* SNAP caseload, monthly | FL DCF (public) | county × month | in-year signal |
 
 ## Steps
 
-### 1. Data extraction (to local)
-- [ ] Write `sql/extract/*.sql` for D5–D8. They're run in Snowsight, or locally with the existing
-      key-pair pattern (`reporting/load_to_snowflake.py`), then exported to CSV.
-- [ ] `src/data/make_dataset.py`: read raw files → write clean parquet to `data/processed/`.
+### 1–2. Data extraction and cleaning
+- [ ] SQL extracts for D5–D7 → CSV → `src/data/make_dataset.py` → `data/processed/` parquet.
+- [ ] Standard keys (5-digit county FIPS, 11-digit tract GEOID as text). Fix the Gold-table problems. Drop records in NetSuite's `DELETEDRECORD` and future dates.
+- [ ] Total distribution **per tract per quarter**, with D7 exclusions applied, so it reflects local client service.
+- [ ] Checks: unique keys; totals reconcile with FTB's figures (FY25-26 ≈ 80M lbs); tract FI persons sum to county after rescaling.
 
-### 2. Cleaning and integration (pandas)
-- [ ] Standard keys: 5-digit county FIPS, 11-digit tract GEOID (as text).
-- [ ] Fix known Gold-table problems: blank and summary rows, county names with stray spaces or commas,
-      IDs stored as FLOAT, duplicate agency numbers.
-- [ ] NetSuite: drop records listed in `DELETEDRECORD` and dates in the future. Convert everything to pounds (meals = lbs ÷ 1.2).
-- [ ] Join Ceres and NetSuite without double-counting their overlap (Apr–Jul 2025).
-- [ ] **Total distribution per tract per quarter.** Agencies are only a stepping stone here; nothing is
-      reported per agency. One limitation: food is counted in the agency's own tract, not where its clients live.
-- [ ] Data checks in `src/data/validate.py`: row counts, unique keys, rates between 0 and 1, totals that reconcile with
-      FTB's figures (e.g. FY25-26 ≈ 80M lbs).
+### 3. Build Layers 0–3 (+ Layer 4 hurricane, optional)
+- [ ] `config/cycle3_assumptions.yaml`: every forward-looking number, per scenario, with its source.
+- [ ] `src/scenario/` with one small function per layer, and `scripts/cycle3_scenarios.py` that writes the output tables.
+- [ ] Sensitivity table: +1 pt unemployment / poverty / S → people, meals, lbs.
 
-### 3. FI model (v1 done; v2 tidy-up)
-v1 (`scripts/cycle3_tract_model.py`): tract ridge model of each tract's position relative to the service-area
-average, plus an area-wide level set by scenario (flat / recent trend). See `CHANGELOG.md` for results.
-- [ ] **Uncertainty bands:** prediction intervals for each horizon, from the holdout errors.
-- [ ] **Level scenarios:** flat, recent trend, and a stress case (e.g. +2 pts). This is the main lever FTB adjusts during the year (step 6).
-- [ ] **Consistency check:** tract roll-up vs. the MMG county rate.
-- [ ] Optional: BLS county unemployment as a feature. Only keep it if the holdout improves.
-- [ ] Model choice stays simple (ridge vs. persistence).
-
-### 4. Food need in pounds, per tract and per period
-Annual: need_lbs(tract, year) = forecast FI persons × lbs per FI person.
-
-| Option | Basis | Value (FTB 10 counties) | What it means |
+### 4. Validation
+**4a. As-of backtests: does the method work?** Build only on what was known at the origin year, then score the later year.
+| Layer | Test | Baselines | Metric |
 |---|---|---|---|
-| A. Full meal gap | MMG Annual Meal Gap ÷ FI persons × 1.2 lbs/meal | **≈ 228 lbs/person/yr** (2024; ~190 meals) → ~170M lbs total | Everything food-insecure people are short, from all sources |
-| B. FTB's current share | FTB lbs distributed (12 mo) ÷ FI persons, area-wide or per county | ≈ 75–80M ÷ ~730K ≈ **~105 lbs/person/yr** (≈45% of A) | What FTB delivers today per food-insecure person; base for "keep pace" planning |
-| C. FTB-set target | A number FTB chooses | — | A policy target |
+| 1 (county level) | Anchor + β·(actual Δdrivers), S = 0, on 2019–2024 county data | persistence; persistence + actual shift | MAE **and bias**, per horizon 1–3 yrs |
+| 2 (tract allocation) | Shares from year *s* → tract people in *s+k* (county total known) | ridge challenger | tract MAE; **top-20% tract hit rate**; Spearman rank correlation; share of need that moved |
+| 1–3 (scenario range) | Did the actual outcome fall between baseline and stress? | — | Descriptive only (~3–5 cases) |
+Note: 2023 needs the corrected file (D3) before it's used in any county backtest.
 
-- [ ] Sensitivity table across A, B and C.
-- [ ] **Per-tract comparison:** current tract distribution ÷ tract need under B. Flag tracts outside a tolerance band
-      (e.g. ±25%) as *possibly under / possibly over-served*, as prompts to investigate.
-- [ ] **Quarterly / half-yearly:** quarterly need = annual need × that quarter's seasonal share, using the
-      quarterly pattern in distribution (NetSuite, plus Ceres if D7 is used). The forecast is still annual;
-      quarters are an allocation of it. That needs to be stated clearly.
+**4b. Parallel run (shadow year).** In year 1 FTB keeps its current method and the model runs alongside, with forecasts
+frozen and dated. **Write down FTB's current method first.** Two scorecards:
+- **Quarterly:** each method's planned pounds vs. actual distribution, per tract and county. This is a proxy that reflects supply too.
+- **When the next MMG year is published:** the real test.
 
-### 5. Validation: will a model built on old data still be accurate years later?
+Adopt the model if it ties or beats the current method on MMG and isn't clearly worse on the proxy.
+Logged to `results/cycle3/parallel_run_log.csv`.
 
-The data lags: MMG data for year *t* is published around *t+2*. FTB's concern is whether a model built
-on (say) 2014–16 still holds up in 2018. We answer it in two stages: **backtesting** to test the
-*methodology* on past data, then a **parallel run** to test the *live model* before FTB relies on it.
+**4c. Other checks:** totals reconcile; stable quarter shares; FTB staff review of the flagged tracts (where distribution and need differ most).
 
-#### 5a. Backtesting (rolling origin, as-of): does the method work?
-Pretend we're standing in origin year *s*. Train **only on what was known by then** (pairs whose target
-year ≤ *s*), forecast *s+k*, and score against the actual *s+k*. Repeat for every origin and horizon.
-The baselines to beat are **persistence** (use the latest published rate as-is, which is probably close to
-FTB's current method) and **persistence with the correct area-wide change**.
-`scripts/cycle3_tract_model.py` writes this to `results/cycle3/tract_backtest_as_of.csv`.
+### 5. Annual refresh and monitoring (part of the handoff)
+**Yearly (when MMG publishes):**
+1. Load the new year.
+2. Re-anchor (default).
+3. Update the coefficients from the new brief.
+4. Recompute shares.
+5. Score last year's forecast: bias, MAE, top-20% hit rate.
+6. Decide: re-anchor only, update the S menu, or redevelop. If the model doesn't beat persistence for 2 refreshes in a row, simplify.
 
-Results so far with tract data 2020–2024 (county roll-up MAE, percentage points):
+**Contingency:** USDA stopped the CPS Food Security Supplement in 2025, so **future MMG releases are uncertain**.
+If MMG stops, keep the last MMG shares and coefficients, move the anchor forward with BLS and ACS changes, and validate against
+distribution trends (adjusted for supply). The runbook states this explicitly.
 
-| Horizon | Origin → target | Model, flat level | Persistence | Model, true level | Persistence, true level |
-|---|---|---|---|---|---|
-| 1 yr | 2021 → 2022 | 3.3 | 3.2 | 0.6 | 0.6 |
-| 1 yr | 2022 → 2023 | 0.8 | 0.7 | **0.3** | 0.5 |
-| 1 yr | 2023 → 2024 | 0.8 | 0.7 | 0.8 | 0.7 |
-| 2 yr | 2022 → 2024 | 1.1 | 1.0 | **0.5** | 0.7 |
-| 3 yr | — | not testable yet: it needs a 3-year change known before the origin | | | |
-
-What this tells us:
-- **The tract pattern part works.** When the area-wide level is right, the model is as good as or better than
-  the baselines (county error 0.3–0.8 pts).
-- **The area-wide level is the risk.** In 2021→2022 every method missed by about 3 pts, because of the
-  post-pandemic jump. No tract data could have predicted it. With a flat level the model is only as good
-  as persistence. This is why the level is a scenario, monitored during the year (6b).
-- **Correction:** the earlier "3-year model beats the baseline" result (2024 holdout) trained on the 2020→2023
-  change, which wasn't known in 2021. It was optimistic, and the as-of backtest replaces it.
-- **Gap:** five tract years can't test 3-year horizons or periods before COVID. **Request older national
-  county MMG releases (D11, ~2009–2023)** and run the same as-of backtest at county level, e.g.
-  build on ≤2016 → test 2018 and 2019, build on ≤2019 → test 2022. That tests the method across normal
-  years and a shock, which is exactly FTB's question.
-- **Go/no-go for building the 2027 production model:** across all as-of backtests, the model must not be worse than
-  persistence on average, and must be clearly better when the level is right. Otherwise FTB is told to use persistence.
-
-#### 5b. Parallel run (shadow year): does the live model beat FTB's current method?
-- **Year 1, the model runs alongside the current method and FTB doesn't act on it.** FTB plans as usual with its current
-  method. Each cycle we run the model in batch and log its forecasts next to the current method's, using the same
-  inputs and the same horizon, frozen with a date.
-- **Write down the current method first** (e.g. "latest MMG rate × population", or "last year's pounds + x%") so it
-  can be scored the same way.
-- **Two scorecards, because the real answer arrives late:**
-  1. **Quarterly (a proxy, not the truth):** each method's need, split by quarter, vs. actual distribution per
-     tract and county. This says more about supply than need, so it can only flag big problems, not decide.
-  2. **When the next MMG year is published (the real test):** score both methods' frozen forecasts for the year
-     it covers. The first proper comparison comes at the first MMG release after the parallel run starts.
-- **Decision rule at the end of year 1:** adopt the model if it beats or ties the current method on the MMG
-  scorecard and isn't clearly worse on the proxy. Otherwise extend the parallel run, or blend the two.
-- Each comparison is logged to `results/cycle3/parallel_run_log.csv` (forecast date, method, target, error).
-
-#### 5c. Other checks
-| What | How | Pass criterion |
+**During the year (quarterly, light):**
+| Signal | Source | Trigger → action |
 |---|---|---|
-| County roll-up | Tract → county vs. the MMG county rate | Within ~1 pt |
-| Pipeline | Totals reconcile to the source and to FTB-reported figures | Within 1% |
-| Seasonal pattern | Same quarter across years (once there are ≥2 years) | Stable shares |
-| Tract distribution vs. need | No ground truth exists: sensible-value checks plus FTB staff review of the flagged tracts | FTB agrees the list is plausible |
+| Distribution vs. plan (season-adjusted) | NetSuite | ±10–15% for 2 quarters → plan review |
+| County unemployment | BLS LAUS | +1 pt vs. scenario → switch scenario |
+| SNAP caseload | FL DCF | −5% vs. prior year → consider the stress S |
+| Disaster declaration | FEMA | any → apply the hurricane overlay |
+| 211 (future) | 211 | index > 1.2 → plan review |
+A trigger prompts a **plan review**, not retraining. `scripts/cycle3_monitor.py` produces a one-page report.
 
-### 6. Handoff package (what FTB receives)
-
-**a. Recalibration runbook (yearly, when MMG publishes, usually in spring)**
-- [ ] One command: `make cycle3` → load the new MMG year and ALICE → re-validate on the new year →
-      refit → re-forecast → recompute need and seasonal shares → write outputs.
-- [ ] A step-by-step guide (same style as `docs/Retrain-Tool-Setup-Guide.pdf`): where to put the new files,
-      what to check in the validation report, and when *not* to promote the new model (e.g. if it does worse
-      than persistence on the holdout).
-- [ ] Every run appends to `results/cycle3/retrain_history.csv`: data years, settings, holdout errors.
-
-**b. Monitoring during the year.** MMG is published once a year, so mid-year checks rely on signals that update sooner:
-| Signal | Frequency | Compared against | Action if off |
-|---|---|---|---|
-| Distribution vs. planned need (tract and county, year to date, adjusted for season) | quarterly | annual need × seasonal shares to date | Over ±15%: investigate (supply problem vs. demand change) |
-| County unemployment (BLS) | monthly | value implied by the chosen level scenario | Persistent move of more than 1 pt: switch the level scenario |
-| SNAP caseload (FL DCF) | monthly | year-ago level | Large change or policy change: consider the stress scenario |
-| Ordered vs. shipped (if D8 is used) | monthly | its own trend | A rising gap suggests supply shortfall, not falling need |
-| **When the new MMG year is published** | yearly | last year's forecast | Record the actual error in the history file; this is the real accuracy check |
-- [ ] `scripts/cycle3_monitor.py`: builds a one-page monitoring report from the latest extracts.
-
-**c. Fixed output format for the dashboard teammate** (CSV or parquet; loading them is their job)
-- [ ] `fi_forecast_tract`: tract, county, forecast year, scenario, rate, lower/upper bounds, FI persons
-- [ ] `fi_forecast_county`: the same, totalled to county
-- [ ] `food_need_tract`: tract, year, assumption, need lbs, current distribution lbs, ratio, flag
-- [ ] `food_need_quarterly`: tract or county, quarter, scenario, assumption, need lbs
-- [ ] `model_run_metadata`: run date, data years, validation errors, model version
-- [ ] A data dictionary for every column.
-
-**d. Documentation:** a model card (data, method, validation, limits), an assumptions register, a methodology note,
-and the caveat above. Plus a walkthrough with the FTB owner and the dashboard teammate.
-
-**e. Feedback system to recommend to FTB** (this is what eventually validates the tract comparisons):
-- Agencies report unmet demand: people turned away, waitlists, early closures, shortages.
-- Track ordered vs. shipped quantities and missed appointments (`CUSTOMRECORD_FB_MHI_APPOINTMENT`).
-- Track spoilage and returns as a sign of over-supply.
-- Run a short annual survey of agency capacity.
+### 6. Handoff package
+- a. Recalibration runbook (step 5) + one command (`make cycle3`).
+- b. Monitoring script + thresholds (step 5).
+- c. **Output format for the dashboard teammate** (CSV/parquet + data dictionary):
+  `need_county` and `need_tract` (scenario, year, people, meals needed, FTB meals, FTB lbs),
+  `need_quarterly`, `tract_distribution_vs_need`, `assumptions_used`, `model_run_metadata`.
+- d. Model card, assumptions register, methodology note, and the caveat. Mark the 2024–2031 recursive ZIP forecast docs as superseded.
+- e. Feedback-system recommendation: agencies report unmet demand; track ordered vs. shipped quantities and missed
+  appointments; track spoilage; run an annual capacity survey.
+- f. Walkthrough with the FTB owner and the dashboard teammate.
 
 ## Order of work
-1. Exports D5–D6, plus the D11 request → 2. cleaning, tract totals, checks → 3. county as-of backtest on D11
-(go/no-go) → 4. FI v2 (intervals, stress scenario) → 5. need in pounds, sensitivity, quarterly split →
-6. runbook, monitoring, output format, docs → walkthrough → **parallel-run year** → adopt or not.
+1. Data: D3 (corrected 2023), D4 (2026 brief), D5–D7 exports, D8 BEBR.
+2. Layers 0–3 + sensitivity.
+3. Backtests 4a (Layer 1 on counties; Layer 2 shares vs. ridge, incl. top-20%).
+4. Layer 4 hurricane (if FTB wants it; needs Ceres D10).
+5. Runbook, monitoring, output format, docs → walkthrough.
+6. Parallel-run year → adopt or not.
 
-## Decisions needed from the team
-1. The pounds-per-person assumption: A, B, C, or show all three (recommended).
-2. Whether quarterly or half-yearly needs are wanted at v1, or annual only.
-3. Whether to include Ceres history (D7) for a steadier seasonal pattern.
-4. Monitoring thresholds (±15% distribution, 1 pt unemployment). These are placeholders for FTB to confirm.
+## Decisions needed from FTB
+1. Which annual decision the plan supports (sourcing budget? agency allocation? board goal?).
+2. Planning unit: meals, pounds, people, or all three.
+3. Horizon and timing (FY+1 / FY+2; when the plan is set; fiscal year runs Jul–Jun).
+4. Coverage target: keep today's ~45–50%, raise it, or set county targets (current county coverage varies ~5×).
+5. Who sets the unemployment and S assumptions, and who signs off.
+6. Which scenarios leadership plans with; whether to include the hurricane overlay, and its definition.
+7. Exclusions for "local service" volume (disaster, transfers, hubs).
+8. FTB's **current planning method**, which is the baseline for the parallel run.
+9. Thresholds for the monitoring checks.

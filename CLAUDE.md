@@ -1,7 +1,7 @@
 # FTB pro bono: notes for Claude sessions
 
-Capital One Data Pro Bono project for **Feeding Tampa Bay (FTB)**. Cycle 3 = census-tract food insecurity (FI)
-forecast → food need in pounds → handoff to FTB. **Read `docs/cycle3_mle_plan.md` first**: it holds the full plan,
+Capital One Data Pro Bono project for **Feeding Tampa Bay (FTB)**. Cycle 3 = **scenario model**: county need from the latest MMG level + published
+sensitivities + explicit assumptions (Layer 0–1), allocated to tracts by stable shares (Layer 2), converted to meals/lbs (Layer 3). **Read `docs/cycle3_mle_plan.md` first**: it holds the full plan,
 the decisions made so far, and the open items.
 
 ## Scope and constraints
@@ -12,7 +12,9 @@ the decisions made so far, and the open items.
   It's an *estimate* of need, not a measure of it; always add that caveat.
 - Our job ends at the model outputs (fixed files + data dictionary). The dashboard / Power BI is a teammate's job.
 - Validation = as-of rolling backtest (only data known at the origin year) + a parallel-run year against FTB's current method.
-- Keep the model simple (ridge vs. persistence). The owner doesn't want effort beyond what the project needs.
+- Fixed scenarios (baseline / stress / labeled historical swing), **no P10/P90**. MMG data before the 2020 release isn't comparable.
+- The 2023 county MMG data in our files has the BLS-unemployment error (2023 = 2022); use the corrected file.
+- Keep it simple. The owner doesn't want effort beyond what the project needs.
 
 ## Data
 - Snowflake (role `CAPONETEAM`): `FTB.SILVER` / `FTB.GOLD` (MMG, ALICE, agencies, school pantries),
@@ -25,7 +27,7 @@ the decisions made so far, and the open items.
   `2025_ALICE_Florida_Data_Sheet.xlsx`.
 
 ## Code
-- `scripts/cycle3_tract_model.py`: cycle 3 FI model (relative tract ridge + area-level scenario) and the as-of backtest.
+- `scripts/cycle3_tract_model.py`: ridge tract model (the **challenger** to Layer 2 shares) and the as-of backtest.
   It reuses `src/models/train_model.py` (`fit_weighted_ridge`, `weighted_metrics`) and `src/features/build_features.clip_rate`.
 - Earlier cycles (ZIP level): notebooks 1.2–1.6, `scripts/retrain_lag3_model.py`, `scripts/score_new_year.py`.
 - Keys: county FIPS is 5 digits; tract GEOID is 11 digits, stored as text.
