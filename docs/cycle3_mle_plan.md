@@ -103,6 +103,46 @@ Raw files go in `data/raw/` and `data/external/`, which git ignores. The SQL ext
 | D10 | *(optional)* Ceres distribution history: seasonality, hurricane uplift (Ian 2022, Helene/Milton 2024) | `FTB.BRONZE` | agency × month | optional (Layer 4) |
 | D11 | *(optional)* SNAP caseload, monthly | FL DCF (public) | county × month | in-year signal |
 
+## Status (2026-11-21): Layers 0–4 built, first backtests run
+Run with `python scripts/cycle3_scenarios.py` (outputs: `docs/cycle3_output_dictionary.md`) and
+`python scripts/cycle3_backtest_scenario.py`. Data: private repo `lyu-Andrea/ftb-pro-bono-data`, cloned as `data/`.
+
+**First results (baseline, FTB total):** 16.3% food insecure in 2026–27 (MMG 2024: 15.0%); ~867K people in 2027;
+FTB plan ~97.7M lbs in 2027 at today's coverage (49.4% of need; last 4 quarters = 96.3M lbs local service).
+Stress 2027: 17.8%, ~106.7M lbs. Historical swing: 18.3%, ~109.7M lbs.
+Sensitivity (FTB-wide): +1 pt unemployment ≈ +25K people ≈ +2.8M lbs; +1 pt S ≈ +53K people ≈ +6.0M lbs.
+
+**What changed vs. the October illustrative numbers:** BLS shows unemployment is **already up 1.2–2.5 pts since 2024**
+in every FTB county (Hillsborough 3.4% → ~4.8% in 2026; Sumter 5.8% → ~8.3%). The baseline now starts from that
+observed path, not +0.3. Coverage is computed against need in the *same period* as the pounds (not the 2024 meal gap),
+so "keep current coverage" reproduces today's pounds and grows only with need.
+
+**Backtest, Layer 1 (county, transitions touching 2023 excluded), mean FTB-wide level error:**
+| Horizon | persistence | anchor + drivers, S = 0 | anchor + drivers + national S (actual) |
+|---|---|---|---|
+| 1 yr | 1.4 pts | 1.8 | **0.8** |
+| 2 yr | 1.5 | 2.4 | **0.5** |
+| 3 yr | 2.5 | 3.0 | **0.8** |
+- **Drivers alone are worse than persistence** (unemployment fell 2020→22 while FI jumped). With the national shift
+  (MMG year effects) added, error drops to 0.5–0.8 pts. FTB's counties track the national shift. **S is the
+  single most important assumption.** (The "actual S" row uses hindsight; it tests the mechanism, not a forecast.)
+
+**Backtest, Layer 2 (tract allocation, county totals known):**
+| Horizon | Shares: misallocated / top-20% hit / Spearman | Ridge challenger |
+|---|---|---|
+| 1 yr | 6.6% / 81% / 0.93 | **5.4% / 83% / 0.95** |
+| 2 yr | 9.5% / 72% / 0.87 | **7.0% / 79% / 0.93** |
+| 3 yr | 11.8% / 67% / 0.81 | not testable yet |
+- The ridge model is modestly better where it can be tested. The base year → plan year gap is ~3 years (MMG lag),
+  which only shares can be tested at. **Decision for the team:** keep shares (simpler) or switch to ridge for Layer 2.
+
+**Open data items:**
+- The 3 hub agencies are excluded as non-local. One of them handles most of Citrus County's pounds, so Citrus coverage shows 7%. Decide (details in the private data repo).
+- "Internal" (3.3M lbs) counts as local service. Confirm.
+- 67% of high-need tracts have no agency located in them. Tract is too fine for a distribution comparison, so the
+  next step is a service-area view (tract + neighbors, or ZIP).
+- Corrected MMG 2023 county file still pending.
+
 ## Steps
 
 ### 1–2. Data extraction and cleaning

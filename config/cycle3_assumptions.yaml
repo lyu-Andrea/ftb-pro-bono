@@ -1,0 +1,89 @@
+# Cycle 3 scenario model: Layer 0 assumptions.
+# Every forward-looking number lives here. Changing a scenario never requires a code change.
+# Units: rates and their changes are in PERCENTAGE POINTS (e.g. 0.5 = +0.5 pts); counts are people.
+# Status of each assumption: [data] = measured, [published] = from a cited source,
+# [team] = team proposal for FTB to confirm, [FTB] = FTB's decision.
+
+base_year: 2024                 # [data] latest MMG year (MMG 2026 release). The anchor for every scenario.
+target_years: [2025, 2026, 2027, 2028]
+
+# Layer 1: sensitivities, read from the technical brief that matches the base year.
+coefficients:                   # [published] MMG 2026 Technical Brief, Appendix Table 1 (state level, 2009-2024)
+  unemployment: 0.471           # +1 pt unemployment -> +0.471 pt food insecurity
+  poverty: 0.289                # +1 pt poverty -> +0.289 pt food insecurity
+  source: "Feeding America, Map the Meal Gap 2026 Technical Brief, Appendix Table 1 (full population)"
+
+# Unemployment: "observed" = BLS LAUS county annual averages for years already published (the current
+# year is estimated as last year's annual + this year's year-to-date change vs. the same months last year).
+# Years after the last BLS year stay at that level, plus the scenario's extra.
+unemployment_history: data/external/bls/laus_m03.json     # [data]
+
+# Population: UF BEBR county estimates (2020 census, 2025, 2026) and 2030 projections, interpolated by year.
+population:
+  estimates: data/external/bebr/Estimates_2026_Table1.xlsx  # [data]
+  projections: data/external/bebr/projections_2026.xlsx     # [data]
+
+# Layer 3: conversion.
+meals_per_fi_person: from_mmg   # [published] county Annual Meal Gap / FI persons in the base year (~190 FTB-wide)
+lbs_per_meal: 1.2               # [published] Feeding America convention (meals = lbs / 1.2 in NetSuite)
+coverage:                       # share of the meal gap FTB supplies
+  mode: ftb_wide_current        # [team] ftb_wide_current | by_county_current | fixed
+  fixed_value: null             # [FTB] e.g. 0.50 when mode = fixed
+  # "current" = local-service pounds in the last 4 complete quarters / baseline need (lbs) in the same period.
+  distribution: data/processed/distribution_county_quarter.parquet
+  pounds_column: pounds_local   # excludes disaster, food-bank transfers and hub agencies
+
+# Quarterly split of annual pounds (FTB-wide seasonal shares, 2018-2025 without 2020).
+seasonal_shares: data/processed/seasonal_quarter_shares.parquet
+seasonal_scope: FTB             # FTB | county
+
+# Scenarios. Each one is applied to every target year, relative to the base year.
+#   unemployment_extra: pts ADDED on top of the observed BLS path (applies from the first year after BLS data)
+#   poverty_change:     pts vs. base year (no newer poverty data exists than the base year's ACS)
+#   common_shift:       S, pts vs. base year: national policy / prices / benefits (SNAP), the part local data can't predict
+#   population_series:  BEBR low | medium | high
+scenarios:
+  baseline:
+    description: "Unemployment as observed by BLS through 2026, then flat; SNAP cuts add a modest shift"
+    unemployment_extra: 0.0     # [team]
+    poverty_change: 0.0         # [team]
+    common_shift: 0.5           # [team] 2025-26 SNAP work-requirement changes (FL caseload -489K, Jan 2025 -> Feb 2026)
+    population_series: medium   # [published]
+  economic_stress:
+    description: "Recession on top of the observed path: +1.5 pts unemployment, +1 pt poverty, larger shift"
+    unemployment_extra: 1.5     # [team]
+    poverty_change: 1.0         # [team]
+    common_shift: 1.0           # [team]
+    population_series: medium
+  historical_swing:
+    description: "A 2022-sized national shock (end of pandemic aid + food inflation), labeled from history"
+    unemployment_extra: 0.0
+    poverty_change: 0.0
+    common_shift: 2.5           # [data] FTB-area county rate rose ~2.5 pts 2021->2022 (national year effect +3.9)
+    population_series: medium
+
+# Reference for choosing S: MMG year fixed effects (national level shift vs. 2009, pts), Appendix Table 1.
+common_shift_history:           # [published]
+  2010: -2.3
+  2011: -1.9
+  2012: -2.2
+  2013: -1.8
+  2014: -1.9
+  2015: -3.0
+  2016: -3.1
+  2017: -2.9
+  2018: -3.2
+  2019: -3.5
+  2020: -4.4
+  2021: -5.0
+  2022: -1.1
+  2023: -0.1
+  2024: -0.3
+
+# Layer 4: hurricane overlay (off by default). extra = planned lbs x footprint share x (uplift - 1) x weeks / 52
+hurricane:
+  enabled: false                # [FTB]
+  counties: []                  # [FTB] county FIPS in the footprint, e.g. ["12057", "12103"]
+  footprint_share: 0.3          # [FTB] share of each listed county's need affected
+  uplift: 2.0                   # [published] FTB ran at ~2x normal daily meals in the 2024 storm response
+  weeks: 4                      # [FTB]

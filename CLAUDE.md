@@ -20,13 +20,17 @@ the decisions made so far, and the open items.
 - Snowflake (role `CAPONETEAM`): `FTB.SILVER` / `FTB.GOLD` (MMG, ALICE, agencies, school pantries),
   `FTB.BRONZE` (old Ceres ERP, until about Jul 2025), `STITCH.SNOWFLAKE_NS_INT` (NetSuite, Apr 2025 →).
   Cloud sessions have **no Snowflake credentials**; extracts are exported as CSV and uploaded.
-- Small aggregates are pulled to local files and processed in pandas. Raw files go in `data/external/` and `data/raw/`.
+- Data lives in the **private** repo `lyu-Andrea/ftb-pro-bono-data`, cloned as `data/` inside this repo (see its README).
+  Nothing derived from FTB distribution (pounds, coverage) is committed here; it goes to `forecasts/` (gitignored).
 - **`data/` and `forecasts/` are gitignored. This repo is public: never commit raw data, agency-level NetSuite data,
   keys, or account identifiers.**
 - Expected file names in `data/external/`: `MMG_Consolidated.xlsx`, `MMG_2026_2024-data.xlsx`,
   `2025_ALICE_Florida_Data_Sheet.xlsx`.
 
 ## Code
+- Scenario model: `config/cycle3_assumptions.yaml` (Layer 0) → `src/scenario/` → `scripts/cycle3_scenarios.py`
+  (outputs to gitignored `forecasts/cycle3/scenario/`, documented in `docs/cycle3_output_dictionary.md`);
+  backtests in `scripts/cycle3_backtest_scenario.py`.
 - `scripts/cycle3_tract_model.py`: ridge tract model (the **challenger** to Layer 2 shares) and the as-of backtest.
   It reuses `src/models/train_model.py` (`fit_weighted_ridge`, `weighted_metrics`) and `src/features/build_features.clip_rate`.
 - Earlier cycles (ZIP level): notebooks 1.2–1.6, `scripts/retrain_lag3_model.py`, `scripts/score_new_year.py`.

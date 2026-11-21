@@ -1,0 +1,14 @@
+horizon_years,origin_year,target_year,method,misallocated_share,top20_hit_rate,spearman,involves_2023
+1,2020,2021,shares_persistence,0.0715,0.8406,0.916,False
+1,2021,2022,shares_persistence,0.0752,0.7628,0.9158,False
+1,2021,2022,ridge_challenger,0.0572,0.8118,0.9425,False
+1,2022,2023,shares_persistence,0.0537,0.8179,0.9468,True
+1,2022,2023,ridge_challenger,0.0452,0.8445,0.9619,True
+1,2023,2024,shares_persistence,0.0632,0.8366,0.938,True
+1,2023,2024,ridge_challenger,0.0588,0.835,0.9479,True
+2,2020,2022,shares_persistence,0.1035,0.7031,0.8498,False
+2,2021,2023,shares_persistence,0.0984,0.6985,0.8617,True
+2,2022,2024,shares_persistence,0.0826,0.7462,0.8955,False
+2,2022,2024,ridge_challenger,0.0697,0.7938,0.9274,False
+3,2020,2023,shares_persistence,0.1205,0.657,0.799,True
+3,2021,2024,shares_persistence,0.1155,0.6881,0.8169,False

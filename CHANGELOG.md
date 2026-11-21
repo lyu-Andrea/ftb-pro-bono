@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-11-21 — Cycle 3 scenario model (Layers 0–4) + backtests
+
+- `config/cycle3_assumptions.yaml`: every forward-looking number (base year 2024; MMG 2026 brief coefficients 0.471 / 0.289; BLS-observed unemployment; BEBR population; coverage; 3 scenarios; hurricane overlay off).
+- `src/scenario/` (loaders + layers) and `scripts/cycle3_scenarios.py`: county need → tract shares → meals/lbs → quarterly split. All outputs go to the gitignored `forecasts/cycle3/scenario/` (see `docs/cycle3_output_dictionary.md`).
+- `scripts/cycle3_backtest_scenario.py`: as-of backtests. Layer 1: drivers alone lose to persistence; adding the national year effect brings FTB-wide error to 0.5–0.8 pts. Layer 2: shares misplace 7–12% of county need over 1–3 years; the ridge challenger is modestly better at 1–2 years.
+- Data now comes from the private repo `lyu-Andrea/ftb-pro-bono-data`, cloned as `data/`.
+
 ## 2026-11-21 — Cycle 3: distribution data pipeline (branch `cycle3-data-pipeline`)
 
 FTB distribution pounds totalled per census tract and county per quarter, from Ceres (2018 → Jul 2025) and NetSuite (Aug 2025 →). Agencies are only a stepping stone to tracts; nothing is output per agency.
