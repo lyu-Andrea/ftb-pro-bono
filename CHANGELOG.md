@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-11-21 — Cycle 3: distribution data pipeline (branch `cycle3-data-pipeline`)
+
+FTB distribution pounds totalled per census tract and county per quarter, from Ceres (2018 → Jul 2025) and NetSuite (Aug 2025 →). Agencies are only a stepping stone to tracts; nothing is output per agency.
+
+- **Extracts:** `sql/extract/*.sql` (run in Snowsight; CSVs go to gitignored `data/raw/<date>/`). How to run them is in `docs/cycle3_data_export_guide.md`.
+- **Pipeline:** `src/data/cycle3_make_dataset.py` → `data/processed/distribution_tract_quarter`, `distribution_county_quarter`, `seasonal_quarter_shares` (parquet), plus a run log with aggregates only. `src/data/cycle3_validate.py` runs the checks. Columns and rules are in `docs/cycle3_data_dictionary.md`. These are new files: the cycle 1–2 `make_dataset.py` / `validate.py` are untouched.
+- **NetSuite pounds** come from item fulfillments (order weight). The `CUSTOMRECORD_FOOD_DISTRIBUTION_SUMMARY` table is a partial backfill, and `DELETEDRECORD` has no record IDs, so deletions can't be removed.
+- **Cutover 2025-08-01:** on Aug 1–8 2025 both systems ran, and 94% of Ceres's pounds also appear in NetSuite for the same agency and day. Each month now comes from one source.
+- **Tract mapping (fallbacks):** `FTB.GOLD.AGENCIES.GEOID_AGENCES` mixes 2010 and 2020 tract codes, and some codes are neither. Where there is no geocoded address, a GOLD tract is used only when it fits the ship-to ZIP; otherwise the ZIP's main tract, and failing that, the county from the agency number. Public Census 2020 relationship files go in `data/external/census/`.
+- **Geocoding:** `src/data/cycle3_geocode.py` sends street addresses (anonymous row number, street, city, ZIP only) to the public Census Geocoder. The geocoded tract is the first location rule. 970 addresses (NetSuite ship-to + Ceres customer table) matched 91%. FY25-26: 89% of pounds placed by street address, 1% by GOLD tract, 6% by ZIP, 4% county only. GOLD's tract agreed with the geocoded tract for only 6% of agencies. Customers without a reliable tract, and how each is matched, are documented in the data dictionary. The per-customer QA list stays local (gitignored).
+- **All customers, agencies separable:** outputs keep every customer and add `pounds_agency`, `pounds_agency_local`, `pounds_other_institution`, `pounds_type_unknown` (NetSuite customer category; for Ceres-only customers, the Ceres agency category mapped via the customers in both systems). The 80.0M check compares the agency total: 80.9M (+1.2%). All customers total 89.9M (schools, internal, ...).
+- **Open:** confirm with FTB that its 80.0M counts agencies only. The hub exclusions (HILL0135, CITR0013, HILL0051) are pending FTB confirmation.
+
 ## 2026-11-20 — Cycle 3: census-tract food insecurity forecast (rolled up to county)
 
 `scripts/cycle3_tract_model.py` forecasts 2025–2027 food insecurity for FTB's 1,169 census tracts and 10 counties, using only public data (Map the Meal Gap tract data 2020–2024 plus county ALICE; no Moody's).
