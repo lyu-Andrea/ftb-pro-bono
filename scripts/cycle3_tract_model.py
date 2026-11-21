@@ -174,6 +174,47 @@ def model_payload(m: dict, k: int, alpha: float, train_years: list) -> dict:
     }
 
 
+def backtest(panel: pd.DataFrame, fi_levels: pd.Series) -> pd.DataFrame:
+    """Rolling-origin backtest that only uses data available at the forecast origin.
+
+    For origin year s and horizon k: train only on pairs whose target year is <= s (known at s),
+    forecast s+k, and score against the actual s+k. This is the honest "build in year s, check
+    in year s+k" test. With tract data 2020-2024 it is only possible for short horizons; longer
+    horizons need more history (see docs/cycle3_mle_plan.md, step 5).
+    """
+    rows = []
+    for k in HORIZONS:
+        pairs = make_pairs(panel, k)
+        for origin in sorted(pairs["source_year"].unique()):
+            train = pairs[pairs["target_year"] <= origin]
+            test = pairs[pairs["source_year"] == origin].copy()
+            if train.empty or test.empty:
+                continue
+            alpha = pick_alpha(train) if train["county_fips"].nunique() > 1 else 1.0
+            m = fit_weighted_ridge(train[FEATURES], train["food_insecurity_rate"], train["population"], alpha=alpha)
+            rel_pred = predict_weighted_ridge(m, test[FEATURES])
+            target = origin + k
+            lv = level_scenarios(fi_levels.loc[:origin], origin, k)
+            preds = {
+                "model_flat": lv["flat"] + rel_pred,
+                "model_recent_trend": lv["recent_trend"] + rel_pred,
+                "model_oracle_level": fi_levels.loc[target] + rel_pred,
+                "persistence": test["raw_lag_rate"],
+                "persistence_oracle_level": test["raw_lag_rate"] - fi_levels.loc[origin] + fi_levels.loc[target],
+            }
+            for name, pred in preds.items():
+                test[f"pred_{name}"] = clip_rate(pred)
+                tract = weighted_metrics(test, "actual_rate", f"pred_{name}")
+                cty = county_rollup(test, ["actual_rate", f"pred_{name}"])
+                rows.append({"horizon_years": k, "origin_year": origin, "target_year": target,
+                             "train_target_years": sorted(train["target_year"].unique().tolist()),
+                             "method": name, "tract_mae": tract["weighted_mae"],
+                             "tract_mean_error": tract["weighted_mean_error"],
+                             "county_mae": float(np.mean(abs(cty[f"pred_{name}"] - cty["actual_rate"]))),
+                             "n_tracts": tract["n"]})
+    return pd.DataFrame(rows)
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--consolidated", type=Path, default=EXT / "MMG_Consolidated.xlsx")
@@ -234,6 +275,12 @@ def main(argv=None):
             f["predicted_food_insecure_persons"] = (f["predicted_food_insecurity_rate"] * f["population"]).round()
             f["source_year"], f["forecast_year"] = src_year, src_year + k
             forecasts.append(f)
+
+    bt = backtest(panel, fi_levels)
+    bt.to_csv(res_dir / "tract_backtest_as_of.csv", index=False)
+    print("\nAs-of backtest (train only on what was known at the origin year):")
+    print(bt.pivot_table(index=["horizon_years", "origin_year", "target_year"], columns="method",
+                         values="county_mae").round(4).to_string())
 
     metrics = pd.DataFrame(metrics)
     metrics.to_csv(res_dir / "tract_holdout_metrics.csv", index=False)
