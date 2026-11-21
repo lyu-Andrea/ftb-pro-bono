@@ -39,7 +39,8 @@ def geocode(addr):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    p.add_argument("--raw", required=True, type=Path)
+    p.add_argument("--raw", required=True, type=Path, help="folder holding the address CSVs (kept local only)")
+    p.add_argument("--out", type=Path, help="folder for d6_geocoded.csv (default: --raw)")
     p.add_argument("--addresses", required=True, nargs="+",
                    help="CSV(s) in the raw folder with agency_no,address,city,zip; the first file wins per agency")
     a = p.parse_args()
@@ -60,7 +61,7 @@ def main():
     d["state"] = "FL"
     d["zip"] = d.zip.fillna("").str[:5]
     res = d[["row_id", "agency_no"]].merge(geocode(d), on="row_id", how="left").drop(columns="row_id")
-    res.to_csv(a.raw / "d6_geocoded.csv", index=False)
+    res.to_csv((a.out or a.raw) / "d6_geocoded.csv", index=False)
     n = res.geocode_tract_geoid.notna()
     print(f"sent {len(d)} addresses; matched {n.sum()} ({n.mean():.0%}); "
           f"match types: {res.geocode_match.value_counts(dropna=False).to_dict()}")

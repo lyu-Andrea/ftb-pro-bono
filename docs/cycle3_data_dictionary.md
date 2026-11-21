@@ -133,7 +133,9 @@ It has no pounds per agency. Sort by `precision` to see who still needs an addre
    - query D10c in [`d10_ceres_pounds_agency_month.sql`](../sql/extract/d10_ceres_pounds_agency_month.sql)
      for Ceres-era customers.
 2. Geocode:
-   `python -m src.data.cycle3_geocode --raw data/raw/<date> --addresses d6b_customer_addresses.csv d10c_ceres_customer_addresses.csv`.
+   `python -m src.data.cycle3_geocode --raw data/local_only/<date> --out data/raw/<date> --addresses d6b_customer_addresses.csv d10c_ceres_customer_addresses.csv`.
+   Address files are personal-ish data (some pantries are run from homes), so they live in
+   `data/local_only/`, which isn't shared. Only `d6_geocoded.csv` (agency number → tract) goes into `raw/`.
    - Only an anonymous row number, street, city, state and ZIP are sent to
      `geocoding.geo.census.gov`. Agency numbers and names stay local.
    - It writes `d6_geocoded.csv`, which `cycle3_make_dataset.py` uses automatically.

@@ -19,7 +19,7 @@ results grid saves a CSV. Use the assistant only if a query errors ("fix this qu
 
 ## Step 0. Discovery: done 2026-11-21
 
-Files: `data/raw/2026-11-21/discovery_ns_columns.csv`, `discovery_ns_column_profile.md` (local only).
+Files: `data/raw/2026-11-21/discovery/discovery_ns_columns.csv`; `data/local_only/2026-11-21/discovery_ns_column_profile.md` (holds sample emails/phones: local only, never shared).
 What it established:
 
 - The Stitch NetSuite tables have **no VARIANT columns**. References such as `ENTITY` are plain NUMBER IDs
@@ -136,7 +136,7 @@ To check D3: 2023 unemployment should differ from 2022 for the 10 FTB counties.
 
 ## Addresses for tract geocoding (added 2026-11-21; first run done: D6b 480, D10c 919 rows)
 Run and save to the raw folder:
-- [`sql/extract/d6b_customer_addresses.sql`](../sql/extract/d6b_customer_addresses.sql) → `d6b_customer_addresses.csv`
+- [`sql/extract/d6b_customer_addresses.sql`](../sql/extract/d6b_customer_addresses.sql) → `d6b_customer_addresses.csv`, saved to `data/local_only/<date>/` (addresses are never shared)
 - query D10c at the end of the D10 file → `d10c_ceres_customer_addresses.csv`
 
 Claude then runs `src/data/cycle3_geocode.py`; see `docs/cycle3_data_dictionary.md`, "How to improve the matches".
